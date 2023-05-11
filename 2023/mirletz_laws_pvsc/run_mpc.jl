@@ -147,7 +147,7 @@ function adjust_ac_power_for_forecast(results::Dict{String, Any}, ac_power::Vect
     return batt_power_series
 end
 
-input_data = JSON.parsefile(string(local_path, raw".\reopt_results\reopt_results_True_False_18.389_-66.0933_pv_only_final.json"))
+input_data = JSON.parsefile(string(local_path, raw"\reopt_results\reopt_results_outage_True_True_18.389_-66.0933_match_sam.json"))
 
 site_dict = input_data["inputs"]["Scenario"]["Site"]
 
@@ -181,11 +181,12 @@ periods_per_month = floor(Int, size(tariff.tou_demand_rates)[1] / 12)
 # Hours
 global start_index = 1
 horizon = 24
-interval = 24
+interval = 1
 
 scenario_dict = Dict("PV" => Dict("size_kw" => pv_capacity, "production_factor_series" => zeros(horizon)),
                     "ElectricStorage" => Dict("size_kw" => batt_power_kw, "size_kwh" => batt_capacity, "can_grid_charge" => grid_charge, "soc_init_fraction" => soc, "charge_efficiency" => charge_eff, "discharge_efficiency" => discharge_eff),
                     "ElectricLoad" => Dict("loads_kw" => zeros(horizon)),
+                    "ElectricUtility" => Dict(),
                     "ElectricTariff" => Dict("net_metering" => false, "export_rates" => zeros(horizon), "monthly_previous_peak_demands" => [0.0], "tou_previous_peak_demands" => zeros(periods_per_month)))
 
 # TODO - get SAM battery SOC to match scenario_dict above
@@ -198,24 +199,41 @@ forecast_pv_df = CSV.read(string(local_path, raw".\pv_production_forecast.csv"),
 actual_load_df = CSV.read(string(local_path, raw".\weather_and_load\san_juan_hospital_actual_load.csv"), DataFrame)
 forecast_load_df = CSV.read(string(local_path, raw".\weather_and_load\san_juan_hospital_forecast_load.csv"), DataFrame)
 
+outage_start = 4543
+outage_end = 4567
 
 forecast_output_powers = zeros(0)
 actual_output_powers = zeros(0)
 
 while start_index < 8761
-    end_index = start_index + horizon - 1
+    end_index = min(8760, start_index + horizon - 1)
     rate_dict = REopt.get_subset_of_urdb(tariff, start_index, end_index)
     for (key, value) in rate_dict
         scenario_dict["ElectricTariff"][key] = value
     end
     # Forecast
-    scenario_dict["PV"]["production_factor_series"] = prod_factors[start_index:end_index]
-    scenario_dict["ElectricLoad"]["loads_kw"] = loads[start_index:end_index]
+ 
     soc_init = scenario_dict["ElectricStorage"]["soc_init_fraction"]
-    scenario_dict["ElectricStorage"]["soc_min_fraction"] = min(0.2, soc_init)
+    scenario_dict["ElectricStorage"]["soc_min_fraction"] = min(0.7, soc_init)
+    scenario_dict["ElectricTariff"]["export_rates"] = zeros(end_index - start_index + 1)
 
-    forecast_pv = prod_factors[start_index:end_index] * scenario_dict["PV"]["size_kw"]
-    forecast_load = loads[start_index:end_index]
+    """ SAM will deal with grid outage, none of the other algorithms get advance notice
+    if start_index - outage_start > 0 && start_index <= outage_end
+        scenario_dict["ElectricUtility"] = Dict()
+        outage_ts = max(1, outage_start - start_index)
+        outage_end_ts = max(1, outage_end - start_index)
+        scenario_dict["ElectricUtility"]["outage_start_time_step"] = outage_ts
+        scenario_dict["ElectricUtility"]["outage_end_time_step"] = outage_end_ts
+    else
+        delete!(scenario_dict, "ElectricUtility")
+    end
+    """
+
+    forecast_pv = forecast_pv_df[start_index:end_index, :Power]
+    forecast_load = forecast_load_df[start_index:end_index, :Load]
+
+    scenario_dict["PV"]["production_factor_series"] = clamp!(forecast_pv / scenario_dict["PV"]["size_kw"], 0.0, 10000)
+    scenario_dict["ElectricLoad"]["loads_kw"] = forecast_load
 
     actual_pv = actual_pv_df[start_index:end_index, :Power]
     actual_load = actual_load_df[start_index:end_index, :Load]
@@ -243,8 +261,13 @@ while start_index < 8761
     update_electric_tariff_demand(results, scenario_dict, start_index, start_index + interval, batt_forecast_error)
     
     # Want to save both of these timeseries for analysis
-    append!(forecast_output_powers, ac_batt_power)
-    append!(actual_output_powers, actual_power)
+    if (interval < horizon)
+        append!(forecast_output_powers, ac_batt_power[1:interval])
+        append!(actual_output_powers, actual_power[1:interval])
+    else
+        append!(forecast_output_powers, ac_batt_power)
+        append!(actual_output_powers, actual_power)
+    end
     
     print("Start time ", start_index, "\n")
     print("MPC results:\n", results)
@@ -254,5 +277,5 @@ while start_index < 8761
     global start_index += interval
 end
 
-DelimitedFiles.writedlm(string(local_path, raw".\output_powers_sj_hospital_24_forecast_ac.csv"), forecast_output_powers, ',')
-DelimitedFiles.writedlm(string(local_path, raw".\output_powers_sj_hospital_24_actual_dc.csv"), actual_output_powers, ',')
+DelimitedFiles.writedlm(string(local_path, raw".\output_powers_sj_hospital_day_ahead_forecast_ac.csv"), forecast_output_powers, ',')
+DelimitedFiles.writedlm(string(local_path, raw".\output_powers_sj_hospital_day_ahead_actual_dc.csv"), actual_output_powers, ',')
