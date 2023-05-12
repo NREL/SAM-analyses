@@ -257,13 +257,13 @@ function main(last_time_step = 8760)
         end
         """
 
-        forecast_pv = forecast_pv_df[start_index:end_index, :Power]
+        forecast_pv = [pv < 0 ? 0 : pv for pv in forecast_pv_df[start_index:end_index, :Power]]
         forecast_load = forecast_load_df[start_index:end_index, :Load]
 
-        scenario_dict["PV"]["production_factor_series"] = clamp!(forecast_pv / scenario_dict["PV"]["size_kw"], 0.0, 10000)
+        scenario_dict["PV"]["production_factor_series"] = forecast_pv / scenario_dict["PV"]["size_kw"]
         scenario_dict["ElectricLoad"]["loads_kw"] = forecast_load
 
-        actual_pv = actual_pv_df[start_index:end_index, :Power]
+        actual_pv = [pv < 0 ? 0 : pv for pv in actual_pv_df[start_index:end_index, :Power]]
         actual_load = actual_load_df[start_index:end_index, :Load]
 
         model = Model(HiGHS.Optimizer)
