@@ -150,14 +150,17 @@ end
 input_data = JSON.parsefile(string(local_path, raw"\reopt_results\reopt_results_outage_True_True_18.389_-66.0933_match_sam.json"))
 
 site_dict = input_data["inputs"]["Scenario"]["Site"]
+output_dict = input_data["outputs"]["Scenario"]["Site"]
 
 pv_dict = site_dict["PV"]
-pv_capacity = pv_dict["max_kw"] # Needs to change to process sized outputs
+pv_outputs = output_dict["PV"]
+pv_capacity = pv_outputs["size_kw"]
 prod_factors = pv_dict["prod_factor_series_kw"]
 
 batt_dict = site_dict["Storage"]
-batt_capacity = batt_dict["max_kwh"] # Needs to change to process sized outputs
-batt_power_kw = batt_dict["max_kw"]
+batt_outputs = output_dict["Storage"]
+batt_capacity = batt_outputs["size_kwh"]
+batt_power_kw = batt_outputs["size_kw"]
 grid_charge = batt_dict["canGridCharge"]
 inv_eff = batt_dict["inverter_efficiency_pct"]
 rec_eff = batt_dict["rectifier_efficiency_pct"]
