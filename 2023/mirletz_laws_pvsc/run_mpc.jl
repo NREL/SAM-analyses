@@ -3,7 +3,7 @@ This code uses a branch of REopt.jl, which is deprecated.
 To get the source code:
 ```sh
 git clone https://github.com/NREL/REopt.git
-git checkout REopt.run_sam_battery_stateful
+git checkout run_sam_battery_stateful
 ```
 Then add the REoptLite code to your Julia env
 ```julia
