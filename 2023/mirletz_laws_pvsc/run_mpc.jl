@@ -162,12 +162,16 @@ function main(last_time_step = 8760)
     site_dict = input_data["inputs"]["Scenario"]["Site"]
 
     pv_dict = site_dict["PV"]
-    pv_capacity = pv_dict["max_kw"] # Needs to change to process sized outputs
     prod_factors = pv_dict["prod_factor_series_kw"]
+    output_dict = input_data["outputs"]["Scenario"]["Site"]
+
+    pv_outputs = output_dict["PV"]
+    pv_capacity = pv_outputs["size_kw"]
 
     batt_dict = site_dict["Storage"]
-    batt_capacity = batt_dict["max_kwh"] # Needs to change to process sized outputs
-    batt_power_kw = batt_dict["max_kw"]
+    batt_outputs = output_dict["Storage"]
+    batt_capacity = batt_outputs["size_kwh"]
+    batt_power_kw = batt_outputs["size_kw"]
     grid_charge = batt_dict["canGridCharge"]
     inv_eff = batt_dict["inverter_efficiency_pct"]
     rec_eff = batt_dict["rectifier_efficiency_pct"]
