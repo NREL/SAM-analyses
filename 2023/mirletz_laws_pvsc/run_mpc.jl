@@ -157,7 +157,7 @@ end
 
 
 function main(last_time_step = 8760)
-    input_data = JSON.parsefile(joinpath("reopt_results", "reopt_results_outage_True_True_18.389_-66.0933_match_sam.json"))
+    input_data = JSON.parsefile(joinpath(@__DIR__, "reopt_results", "reopt_results_outage_True_True_18.389_-66.0933_match_sam.json"))
 
     site_dict = input_data["inputs"]["Scenario"]["Site"]
 
@@ -219,13 +219,13 @@ function main(last_time_step = 8760)
 
     # TODO - get SAM battery SOC to match scenario_dict above
     # REopt.SAM_Battery class will resize appropriately given the scenarios above
-    batt = REopt.SAM_Battery("test_batt.json", batt_capacity)
+    batt = REopt.SAM_Battery(joinpath(@__DIR__, "test_batt.json"), batt_capacity)
 
-    actual_pv_df = CSV.read("pv_production_actual.csv", DataFrame) # 25 years of data
-    forecast_pv_df = CSV.read("pv_production_forecast.csv", DataFrame) # 25 years of data
+    actual_pv_df = CSV.read(joinpath(@__DIR__,"pv_production_actual.csv"), DataFrame) # 25 years of data
+    forecast_pv_df = CSV.read(joinpath(@__DIR__, "pv_production_forecast.csv"), DataFrame) # 25 years of data
 
-    actual_load_df = CSV.read(joinpath("weather_and_load", "san_juan_hospital_actual_load.csv"), DataFrame)
-    forecast_load_df = CSV.read(joinpath("weather_and_load", "san_juan_hospital_forecast_load.csv"), DataFrame)
+    actual_load_df = CSV.read(joinpath(@__DIR__, "weather_and_load", "san_juan_hospital_actual_load.csv"), DataFrame)
+    forecast_load_df = CSV.read(joinpath(@__DIR__, "weather_and_load", "san_juan_hospital_forecast_load.csv"), DataFrame)
 
     outage_start = 4543
     outage_end = 4567
@@ -305,6 +305,6 @@ function main(last_time_step = 8760)
         start_index += interval
     end
 
-    DelimitedFiles.writedlm("output_powers_sj_hospital_day_ahead_forecast_ac.csv", forecast_output_powers, ',')
-    DelimitedFiles.writedlm("output_powers_sj_hospital_day_ahead_actual_dc.csv", actual_output_powers, ',')
+    DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_forecast_ac.csv"), forecast_output_powers, ',')
+    DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_actual_dc.csv"), actual_output_powers, ',')
 end
