@@ -244,7 +244,7 @@ function main(last_time_step = 8760)
         # Forecast
     
         soc_init = scenario_dict["ElectricStorage"]["soc_init_fraction"]
-        scenario_dict["ElectricStorage"]["soc_min_fraction"] = min(0.7, soc_init)
+        scenario_dict["ElectricStorage"]["soc_min_fraction"] = 0.7
         scenario_dict["ElectricTariff"]["export_rates"] = repeat([0.075], end_index - start_index + 1)
 
         """ SAM will deal with grid outage, none of the other algorithms get advance notice
@@ -310,13 +310,13 @@ function main(last_time_step = 8760)
             append!(actual_output_powers, actual_power)
         end
         
-        """
+
         print("Start time ", start_index, "\n")
         print("MPC results:\n", results)
         print("\n\n")
         print("Next inputs: \n", scenario_dict)
         print("\n\n")
-        """
+
         start_index += interval
     end
 
