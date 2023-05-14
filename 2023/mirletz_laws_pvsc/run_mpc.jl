@@ -12,11 +12,11 @@ pkg> add your/path/to/REoptLite/  # that you just cloned
 
 NOTE the SAM libraries in REoptLite for Mac do not support Apple chips.
 =#
-using REopt, JuMP, HiGHS, JSON, DelimitedFiles, CSV, DataFrames
+using JuMP, HiGHS, JSON, DelimitedFiles, CSV, DataFrames
 
 
 # Only need to account for battery errors at this stage, PV and load errors should be accounted for in previous function
-function update_electric_tariff_demand(results::Dict, inputs::Dict, start_index::Integer, next_start::Integer, batt_forecast_error::Vector{Float64})
+function update_electric_tariff_demand(results::Dict, inputs::Dict, start_index::Integer, next_start::Integer, batt_forecast_error::Vector{Real})
     monthly_peak = inputs["ElectricTariff"]["monthly_previous_peak_demands"]
     tou_peaks = inputs["ElectricTariff"]["tou_previous_peak_demands"]
     tou_timesteps = inputs["ElectricTariff"]["tou_demand_timesteps"]
@@ -95,7 +95,7 @@ function get_ac_batt_power(results::Dict{String, Any})::Vector{Float64}
 end
 
 # Need to adjust the dict objects here, since they'll be re-used post battery run to account for SOC errors
-function adjust_ac_power_for_forecast(results::Dict{String, Any}, ac_power::Vector{Float64}, pv_forecast_error::Vector{Float64}, load_forecast_error::Vector{Float64})::Vector{Float64}
+function adjust_ac_power_for_forecast(results::Dict{String, Any}, ac_power::Vector{Real}, pv_forecast_error::Vector{Real}, load_forecast_error::Vector{Real})::Vector{Real}
     pv_to_battery = results["PV"]["to_battery_series_kw"]
     load_from_pv = results["PV"]["to_load_series_kw"]
     load_from_batt = results["ElectricStorage"]["to_load_series_kw"]
@@ -257,13 +257,13 @@ function main(last_time_step = 8760)
         end
         """
 
-        forecast_pv = [pv < 0 ? 0 : pv for pv in forecast_pv_df[start_index:end_index, :Power]]
+        forecast_pv = [pv < 0.0 ? 0.0 : pv for pv in forecast_pv_df[start_index:end_index, :Power]]
         forecast_load = forecast_load_df[start_index:end_index, :Load]
 
         scenario_dict["PV"]["production_factor_series"] = forecast_pv / scenario_dict["PV"]["size_kw"]
         scenario_dict["ElectricLoad"]["loads_kw"] = forecast_load
 
-        actual_pv = [pv < 0 ? 0 : pv for pv in actual_pv_df[start_index:end_index, :Power]]
+        actual_pv = [pv < 0.0 ? 0.0 : pv for pv in actual_pv_df[start_index:end_index, :Power]]
         actual_load = actual_load_df[start_index:end_index, :Load]
 
         model = Model(HiGHS.Optimizer)
