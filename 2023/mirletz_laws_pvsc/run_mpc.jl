@@ -16,7 +16,7 @@ using JuMP, HiGHS, JSON, DelimitedFiles, CSV, DataFrames
 
 
 # Only need to account for battery errors at this stage, PV and load errors should be accounted for in previous function
-function update_electric_tariff_demand(results::Dict, inputs::Dict, start_index::Integer, next_start::Integer, batt_forecast_error::Vector{Real})
+function update_electric_tariff_demand(results::Dict, inputs::Dict, start_index::Integer, next_start::Integer, batt_forecast_error::Vector{<:Real})
     monthly_peak = inputs["ElectricTariff"]["monthly_previous_peak_demands"]
     tou_peaks = inputs["ElectricTariff"]["tou_previous_peak_demands"]
     tou_timesteps = inputs["ElectricTariff"]["tou_demand_timesteps"]
@@ -95,7 +95,7 @@ function get_ac_batt_power(results::Dict{String, Any})::Vector{Float64}
 end
 
 # Need to adjust the dict objects here, since they'll be re-used post battery run to account for SOC errors
-function adjust_ac_power_for_forecast(results::Dict{String, Any}, ac_power::Vector{Real}, pv_forecast_error::Vector{Real}, load_forecast_error::Vector{Real})::Vector{Real}
+function adjust_ac_power_for_forecast(results::Dict{String, Any}, ac_power::Vector{<:Real}, pv_forecast_error::Vector{<:Real}, load_forecast_error::Vector{<:Real})::Vector{Real}
     pv_to_battery = results["PV"]["to_battery_series_kw"]
     load_from_pv = results["PV"]["to_load_series_kw"]
     load_from_batt = results["ElectricStorage"]["to_load_series_kw"]
@@ -195,7 +195,7 @@ function main(last_time_step = 8760)
     # Hours
     start_index = 1
     horizon = 24
-    interval = 1
+    interval = 24
 
     scenario_dict = Dict(
         "PV" => Dict("size_kw" => pv_capacity, "production_factor_series" => zeros(horizon)),
@@ -233,6 +233,8 @@ function main(last_time_step = 8760)
     forecast_output_powers = zeros(0)
     actual_output_powers = zeros(0)
 
+    run_forecast = false
+
     while start_index < last_time_step + 1
         end_index = min(last_time_step, start_index + horizon - 1)
         rate_dict = REopt.get_subset_of_urdb(tariff, start_index, end_index)
@@ -243,7 +245,7 @@ function main(last_time_step = 8760)
     
         soc_init = scenario_dict["ElectricStorage"]["soc_init_fraction"]
         scenario_dict["ElectricStorage"]["soc_min_fraction"] = min(0.7, soc_init)
-        scenario_dict["ElectricTariff"]["export_rates"] = zeros(end_index - start_index + 1)
+        scenario_dict["ElectricTariff"]["export_rates"] = repeat([0.075], end_index - start_index + 1)
 
         """ SAM will deal with grid outage, none of the other algorithms get advance notice
         if start_index - outage_start > 0 && start_index <= outage_end
@@ -257,14 +259,25 @@ function main(last_time_step = 8760)
         end
         """
 
-        forecast_pv = [pv < 0.0 ? 0.0 : pv for pv in forecast_pv_df[start_index:end_index, :Power]]
-        forecast_load = forecast_load_df[start_index:end_index, :Load]
+        if run_forecast
+            forecast_pv = [pv < 0.0 ? 0.0 : pv for pv in forecast_pv_df[start_index:end_index, :Power]]
+            forecast_load = forecast_load_df[start_index:end_index, :Load]
 
-        scenario_dict["PV"]["production_factor_series"] = forecast_pv / scenario_dict["PV"]["size_kw"]
-        scenario_dict["ElectricLoad"]["loads_kw"] = forecast_load
+            actual_pv = [pv < 0.0 ? 0.0 : pv for pv in actual_pv_df[start_index:end_index, :Power]]
+            actual_load = actual_load_df[start_index:end_index, :Load]
 
-        actual_pv = [pv < 0.0 ? 0.0 : pv for pv in actual_pv_df[start_index:end_index, :Power]]
-        actual_load = actual_load_df[start_index:end_index, :Load]
+            scenario_dict["PV"]["production_factor_series"] = forecast_pv / scenario_dict["PV"]["size_kw"]
+            scenario_dict["ElectricLoad"]["loads_kw"] = forecast_load
+        else
+            actual_pv = [pv < 0.0 ? 0.0 : pv for pv in actual_pv_df[start_index:end_index, :Power]]
+            actual_load = actual_load_df[start_index:end_index, :Load]
+            
+            forecast_pv = actual_pv 
+            forecast_load = actual_load
+
+            scenario_dict["PV"]["production_factor_series"] = actual_pv / scenario_dict["PV"]["size_kw"]
+            scenario_dict["ElectricLoad"]["loads_kw"] = actual_load
+        end
 
         model = Model(HiGHS.Optimizer)
         results = REopt.run_mpc(model, scenario_dict)
@@ -297,14 +310,21 @@ function main(last_time_step = 8760)
             append!(actual_output_powers, actual_power)
         end
         
+        """
         print("Start time ", start_index, "\n")
         print("MPC results:\n", results)
         print("\n\n")
         print("Next inputs: \n", scenario_dict)
         print("\n\n")
+        """
         start_index += interval
     end
 
-    DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_forecast_ac.csv"), forecast_output_powers, ',')
-    DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_actual_dc.csv"), actual_output_powers, ',')
+    if run_forecast
+        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_forecast_ac.csv"), forecast_output_powers, ',')
+        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_actual_dc.csv"), actual_output_powers, ',')
+    else
+        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_actual_24_ac.csv"), forecast_output_powers, ',')
+        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_actual_24_dc.csv"), actual_output_powers, ',')
+    end
 end
