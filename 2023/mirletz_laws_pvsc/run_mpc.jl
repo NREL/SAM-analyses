@@ -196,7 +196,7 @@ function main(last_time_step = 8760)
     # Hours
     start_index = 1
     horizon = 24
-    interval = 24
+    interval = 1
 
     scenario_dict = Dict(
         "PV" => Dict("size_kw" => pv_capacity, "production_factor_series" => zeros(horizon)),
@@ -234,7 +234,7 @@ function main(last_time_step = 8760)
     forecast_output_powers = zeros(0)
     actual_output_powers = zeros(0)
 
-    run_forecast = false
+    run_forecast = true
 
     while start_index < last_time_step + 1
         end_index = min(last_time_step, start_index + horizon - 1)
@@ -292,7 +292,7 @@ function main(last_time_step = 8760)
         batt_power = REopt.get_batt_power_time_series(results, inv_eff, rec_eff)
 
         actual_power = REopt.run_sam_battery(batt, batt_power[1:interval])
-        print(actual_power)
+        #print(actual_power)
         ac_actual_power = REopt.dc_to_ac_power(actual_power, inv_eff, rec_eff)
         REopt.update_mpc_from_batt_stateful(batt, scenario_dict)
 
@@ -311,21 +311,21 @@ function main(last_time_step = 8760)
             append!(actual_output_powers, actual_power)
         end
         
-
+        """
         print("Start time ", start_index, "\n")
         print("MPC results:\n", results)
         print("\n\n")
         print("Next inputs: \n", scenario_dict)
         print("\n\n")
-
+        """
         start_index += interval
     end
 
     if run_forecast
-        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_24_24_forecast_ac_export_rate.csv"), forecast_output_powers, ',')
-        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_24_24_actual_dc_export_rate.csv"), actual_output_powers, ',')
+        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_24_1_forecast_ac_export_rate.csv"), forecast_output_powers, ',')
+        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_24_1_actual_dc_export_rate.csv"), actual_output_powers, ',')
     else
-        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_actual_24_24_ac_export_rate.csv"), forecast_output_powers, ',')
-        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_actual_24_24_dc_export_rate.csv"), actual_output_powers, ',')
+        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_actual_24_1_ac_export_rate.csv"), forecast_output_powers, ',')
+        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_actual_24_1_dc_export_rate.csv"), actual_output_powers, ',')
     end
 end
