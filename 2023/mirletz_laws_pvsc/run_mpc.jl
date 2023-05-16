@@ -195,8 +195,8 @@ function main(last_time_step = 8760)
 
     # Hours
     start_index = 1
-    horizon = 8760
-    interval = 8760
+    horizon = 24
+    interval = 1
 
     scenario_dict = Dict(
         "PV" => Dict("size_kw" => pv_capacity, "production_factor_series" => zeros(horizon)),
@@ -322,10 +322,10 @@ function main(last_time_step = 8760)
     end
 
     if run_forecast
-        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_8760_forecast_ac_export_rate.csv"), forecast_output_powers, ',')
-        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_8760_actual_dc_export_rate.csv"), actual_output_powers, ',')
+        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_24_1_forecast_ac_export_rate.csv"), forecast_output_powers, ',')
+        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_day_ahead_24_1_actual_dc_export_rate.csv"), actual_output_powers, ',')
     else
-        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_actual_8760_ac_export_rate.csv"), forecast_output_powers, ',')
-        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_actual_8760_dc_export_rate.csv"), actual_output_powers, ',')
+        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_actual_24_1_ac_export_rate.csv"), forecast_output_powers, ',')
+        DelimitedFiles.writedlm(joinpath(@__DIR__,"output_powers_sj_hospital_actual_24_1_dc_export_rate.csv"), actual_output_powers, ',')
     end
 end
