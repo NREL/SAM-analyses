@@ -108,41 +108,30 @@ function adjust_ac_power_for_forecast(results::Dict{String, Any}, ac_power::Vect
         pv_error = pv_forecast_error[i]
         load_error = load_forecast_error[i]
         if net_error[i] > 0 # increase in net load relative to forecast (w/o accounting for battery)
-            # Discharging - nothing to do, PV and load functions below will take care of it                
-            # Charging
-            if batt_power < 0  # batt is charging, increasing net load
-                if pv_to_battery[i] > 0 && pv_forecast_error[i] > 0  # cannot get as much PV as expected
-                    charging_diff = max(0, pv_to_battery[i] - pv_error) # if PV produced more than forecast then charging_diff = 0, if PV produced less than increase charging?
-                    # TODO(bmirletz) the scenario_dict has can_grid_charge = true, so why not keep the batt_power as-is and account for power drawn from grid?
-                    pv_to_battery[i] -= charging_diff
-                    pv_error = max(0, pv_error - charging_diff)  # TODO(bmirletz) the reassignment of variables is confusing, why is the pv_error changing here?
-                    batt_power = max(0, ac_power[i] + charging_diff) # TODO(bmirletz) why is the batt_power increasing? This doesn't make sense to me
-                end
-            end
-
-             # TODO(bmirletz) it looks you now account for additional load_from_grid as I suggested above, but using a revised pv_error, what is pv_error here? please use a new variable with an explanatory name
+            
             if pv_error > 0 && load_from_pv[i] > 0
                 extra_grid = min(pv_error, load_from_pv[i])
-                pv_error = max(0, pv_error - extra_grid)  # TODO(bmirletz) pv_error changes again?! isn't the pv_error the same no matter the dispatch?
+                remaining_pv_error = max(0, pv_error - extra_grid)  # pv error unaccounted for by reassigning load_from_pv
                 load_from_pv[i] -= extra_grid 
                 load_from_grid[i] += extra_grid
             end
 
-            load_from_grid[i] += pv_error - load_error
+            load_from_grid[i] += remaining_pv_error - load_error
             
         elseif net_error[i] < 0  # decrease in net load relative to forecast (w/o accounting for battery)
             # Discharging - check that there is sufficient load to absorb the battery power
             if batt_power > 0  # battery discharging
-                if load_from_batt[i] > 0 && load_error < 0  # TODO(bmirletz) why does the load_error have to be negative here?
+                # Prevent discharging to grid if insufficent load
+                if load_from_batt[i] > 0 && load_error < 0  
                     discharging_diff = min(load_from_batt[i], -1.0* load_error)
-                    load_error += discharging_diff  # TODO(bmirletz) why does the load_error increase?
+                    remaining_load_error += discharging_diff  # Load error unaccounted for by reducing battery discharge
                     load_from_batt[i] -= discharging_diff
                     batt_power = min(0, batt_power - discharging_diff)
                 end
             end
             #  Nothing to do for charging in this case, sufficient power is available
 
-            load_from_grid[i] += pv_error - load_error
+            load_from_grid[i] += pv_error - remaining_load_error
         end
 
         append!(batt_power_series, batt_power)
