@@ -276,9 +276,10 @@ function main(last_time_step = 8760)
         
         adjust_ac_power_for_forecast(results, ac_batt_power, pv_forecast_error, load_forecast_error)
 
-        batt_power = REopt.get_batt_power_time_series(results, inv_eff, rec_eff)
+        reopt_batt_dc_power = REopt.get_batt_power_time_series(results, inv_eff, rec_eff)
 
-        actual_power = REopt.run_sam_battery(batt, batt_power[1:interval])
+        # TODO(bmirletz) should 1:interval be 1:horizon on the next line? actual_power and ac_actual_power have length of 1
+        actual_power = REopt.run_sam_battery(batt, reopt_batt_dc_power[1:interval])
         #print(actual_power)
         ac_actual_power = REopt.dc_to_ac_power(actual_power, inv_eff, rec_eff)
         REopt.update_mpc_from_batt_stateful(batt, scenario_dict)
