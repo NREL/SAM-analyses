@@ -12,11 +12,11 @@ pkg> add your/path/to/REoptLite/  # that you just cloned
 
 NOTE the SAM libraries in REoptLite for Mac do not support Apple chips.
 =#
-using JuMP, HiGHS, JSON, DelimitedFiles, CSV, DataFrames, REopt
+using JuMP, HiGHS, JSON, DelimitedFiles, CSV, DataFrames#, REopt
 
 
 # Only need to account for battery errors at this stage, PV and load errors should be accounted for in previous function
-function update_electric_tariff_demand(results::Dict, inputs::Dict, start_index::Integer, next_start::Integer, batt_forecast_error::Vector{<:Real})
+function update_electric_tariff_demand!(results::Dict, inputs::Dict, start_index::Integer, next_start::Integer, batt_forecast_error::Vector{<:Real})
     monthly_peak = inputs["ElectricTariff"]["monthly_previous_peak_demands"]
     tou_peaks = inputs["ElectricTariff"]["tou_previous_peak_demands"]
     tou_timesteps = inputs["ElectricTariff"]["tou_demand_timesteps"]
@@ -87,11 +87,11 @@ end
 
 # Need to adjust the dict objects here, since they'll be re-used post battery run to account for SOC errors
 """
-
-TODO(bmirletz) what is happening in this function? I'm concerned that it changes values in the results dictionary
-    it also returns an unused value?
+Apply forecast errors to results dictionary:
+ - Increase grid usage if PV is insufficent to cover it
+ - Decrease battery discharging if load has decreased to prevent battery to grid
 """
-function adjust_ac_power_for_forecast(results::Dict{String, Any}, ac_power::Vector{<:Real}, pv_forecast_error::Vector{<:Real}, load_forecast_error::Vector{<:Real})::Vector{Real}
+function adjust_ac_power_for_forecast!(results::Dict{String, Any}, ac_power::Vector{<:Real}, pv_forecast_error::Vector{<:Real}, load_forecast_error::Vector{<:Real})
     pv_to_battery = results["PV"]["to_battery_series_kw"]
     load_from_pv = results["PV"]["to_load_series_kw"]
     load_from_batt = results["ElectricStorage"]["to_load_series_kw"]
@@ -111,12 +111,12 @@ function adjust_ac_power_for_forecast(results::Dict{String, Any}, ac_power::Vect
             
             if pv_error > 0 && load_from_pv[i] > 0
                 extra_grid = min(pv_error, load_from_pv[i])
-                remaining_pv_error = max(0, pv_error - extra_grid)  # pv error unaccounted for by reassigning load_from_pv
+                pv_error = max(0, pv_error - extra_grid)  # pv error unaccounted for by reassigning load_from_pv
                 load_from_pv[i] -= extra_grid 
                 load_from_grid[i] += extra_grid
             end
 
-            load_from_grid[i] += remaining_pv_error - load_error
+            load_from_grid[i] += pv_error - load_error
             
         elseif net_error[i] < 0  # decrease in net load relative to forecast (w/o accounting for battery)
             # Discharging - check that there is sufficient load to absorb the battery power
@@ -124,22 +124,19 @@ function adjust_ac_power_for_forecast(results::Dict{String, Any}, ac_power::Vect
                 # Prevent discharging to grid if insufficent load
                 if load_from_batt[i] > 0 && load_error < 0  
                     discharging_diff = min(load_from_batt[i], -1.0* load_error)
-                    remaining_load_error += discharging_diff  # Load error unaccounted for by reducing battery discharge
+                    load_error += discharging_diff  # Load error unaccounted for by reducing battery discharge
                     load_from_batt[i] -= discharging_diff
                     batt_power = min(0, batt_power - discharging_diff)
                 end
             end
             #  Nothing to do for charging in this case, sufficient power is available
 
-            load_from_grid[i] += pv_error - remaining_load_error
+            load_from_grid[i] += pv_error - load_error
         end
 
         append!(batt_power_series, batt_power)
         i += 1
     end
-
-
-    return batt_power_series
 end
 
 
@@ -210,7 +207,7 @@ function main(last_time_step = 8760)
     forecast_output_powers = zeros(0)
     actual_output_powers = zeros(0)
 
-    run_forecast = true
+    run_forecast = false
 
     while start_index < last_time_step + 1
         end_index = min(last_time_step, start_index + horizon - 1)
@@ -263,7 +260,7 @@ function main(last_time_step = 8760)
         pv_forecast_error = forecast_pv - actual_pv
         load_forecast_error = forecast_load - actual_load
         
-        adjust_ac_power_for_forecast(results, ac_batt_power, pv_forecast_error, load_forecast_error)
+        adjust_ac_power_for_forecast!(results, ac_batt_power, pv_forecast_error, load_forecast_error)
 
         reopt_batt_dc_power = REopt.get_batt_power_time_series(results, inv_eff, rec_eff)
 
@@ -277,7 +274,7 @@ function main(last_time_step = 8760)
         # Positive - charged less than expected; negative - discharged less than expected
         batt_forecast_error = ac_batt_power[1:interval] - ac_actual_power
         
-        update_electric_tariff_demand(results, scenario_dict, start_index, start_index + interval, batt_forecast_error)
+        update_electric_tariff_demand!(results, scenario_dict, start_index, start_index + interval, batt_forecast_error)
         
         # Want to save both of these timeseries for analysis
         if (interval < horizon)
