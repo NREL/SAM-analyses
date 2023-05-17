@@ -12,7 +12,7 @@ pkg> add your/path/to/REoptLite/  # that you just cloned
 
 NOTE the SAM libraries in REoptLite for Mac do not support Apple chips.
 =#
-using JuMP, HiGHS, JSON, DelimitedFiles, CSV, DataFrames
+using JuMP, HiGHS, JSON, DelimitedFiles, CSV, DataFrames, REopt
 
 
 # Only need to account for battery errors at this stage, PV and load errors should be accounted for in previous function
@@ -76,26 +76,21 @@ end
 function get_ac_batt_power(results::Dict{String, Any})::Vector{Float64}
     pv_to_battery = results["PV"]["to_battery_series_kw"]
     battery_to_load = results["ElectricStorage"]["to_load_series_kw"]
-
-    batt_power_series = zeros(0)
     n = length(pv_to_battery)
     grid_to_battery = zeros(n)
     if (haskey(results["ElectricUtility"], "to_battery_series_kw"))
         grid_to_battery = results["ElectricUtility"]["to_battery_series_kw"]
     end
-
-    i = 1
-    while i <= n
-        charge = pv_to_battery[i] + grid_to_battery[i]
-        batt_power = battery_to_load[i] - charge
-        append!(batt_power_series, batt_power)
-        i += 1
-    end
-
-    return batt_power_series
+    return battery_to_load - pv_to_battery - grid_to_battery
 end
 
+
 # Need to adjust the dict objects here, since they'll be re-used post battery run to account for SOC errors
+"""
+
+TODO(bmirletz) what is happening in this function? I'm concerned that it changes values in the results dictionary
+    it also returns an unused value?
+"""
 function adjust_ac_power_for_forecast(results::Dict{String, Any}, ac_power::Vector{<:Real}, pv_forecast_error::Vector{<:Real}, load_forecast_error::Vector{<:Real})::Vector{Real}
     pv_to_battery = results["PV"]["to_battery_series_kw"]
     load_from_pv = results["PV"]["to_load_series_kw"]
@@ -112,33 +107,35 @@ function adjust_ac_power_for_forecast(results::Dict{String, Any}, ac_power::Vect
         batt_power = ac_power[i]
         pv_error = pv_forecast_error[i]
         load_error = load_forecast_error[i]
-        if net_error[i] > 0 
+        if net_error[i] > 0 # increase in net load relative to forecast (w/o accounting for battery)
             # Discharging - nothing to do, PV and load functions below will take care of it                
             # Charging
-            if batt_power < 0
-                if pv_to_battery[i] > 0 && pv_forecast_error[i] > 0
-                    charging_diff = max(0, pv_to_battery[i] - pv_error)
+            if batt_power < 0  # batt is charging, increasing net load
+                if pv_to_battery[i] > 0 && pv_forecast_error[i] > 0  # cannot get as much PV as expected
+                    charging_diff = max(0, pv_to_battery[i] - pv_error) # if PV produced more than forecast then charging_diff = 0, if PV produced less than increase charging?
+                    # TODO(bmirletz) the scenario_dict has can_grid_charge = true, so why not keep the batt_power as-is and account for power drawn from grid?
                     pv_to_battery[i] -= charging_diff
-                    pv_error = max(0, pv_error - charging_diff)
-                    batt_power = max(0, ac_power[i] + charging_diff)
+                    pv_error = max(0, pv_error - charging_diff)  # TODO(bmirletz) the reassignment of variables is confusing, why is the pv_error changing here?
+                    batt_power = max(0, ac_power[i] + charging_diff) # TODO(bmirletz) why is the batt_power increasing? This doesn't make sense to me
                 end
             end
 
+             # TODO(bmirletz) it looks you now account for additional load_from_grid as I suggested above, but using a revised pv_error, what is pv_error here? please use a new variable with an explanatory name
             if pv_error > 0 && load_from_pv[i] > 0
                 extra_grid = min(pv_error, load_from_pv[i])
-                pv_error = max(0, pv_error - extra_grid)
+                pv_error = max(0, pv_error - extra_grid)  # TODO(bmirletz) pv_error changes again?! isn't the pv_error the same no matter the dispatch?
                 load_from_pv[i] -= extra_grid 
                 load_from_grid[i] += extra_grid
             end
 
             load_from_grid[i] += pv_error - load_error
             
-        elseif net_error[i] < 0
+        elseif net_error[i] < 0  # decrease in net load relative to forecast (w/o accounting for battery)
             # Discharging - check that there is sufficient load to absorb the battery power
-            if batt_power > 0
-                if load_from_batt[i] > 0 && load_error < 0
+            if batt_power > 0  # battery discharging
+                if load_from_batt[i] > 0 && load_error < 0  # TODO(bmirletz) why does the load_error have to be negative here?
                     discharging_diff = min(load_from_batt[i], -1.0* load_error)
-                    load_error += discharging_diff
+                    load_error += discharging_diff  # TODO(bmirletz) why does the load_error increase?
                     load_from_batt[i] -= discharging_diff
                     batt_power = min(0, batt_power - discharging_diff)
                 end
@@ -161,9 +158,6 @@ function main(last_time_step = 8760)
     input_data = JSON.parsefile(joinpath(@__DIR__, "reopt_results", "reopt_results_outage_True_True_18.389_-66.0933_match_sam.json"))
 
     site_dict = input_data["inputs"]["Scenario"]["Site"]
-
-    pv_dict = site_dict["PV"]
-    prod_factors = pv_dict["prod_factor_series_kw"]
     output_dict = input_data["outputs"]["Scenario"]["Site"]
 
     pv_outputs = output_dict["PV"]
@@ -182,13 +176,6 @@ function main(last_time_step = 8760)
     charge_eff = rec_eff * sqrt(internal_eff)
     discharge_eff = inv_eff * sqrt(internal_eff)
 
-    loads = site_dict["LoadProfile"]["loads_kw"]
-
-    generator = site_dict["Generator"]
-    run_during_outage = generator["generator_only_runs_during_grid_outage"]
-    gen_kw = generator["max_kw"]
-
-    tariff_label = site_dict["ElectricTariff"]["urdb_label"]
     tariff = REopt.URDBrate("5bfdc7925457a33744146c53", 2018)
 
     periods_per_month = floor(Int, size(tariff.tou_demand_rates)[1] / 12)
