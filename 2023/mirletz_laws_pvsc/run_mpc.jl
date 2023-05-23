@@ -15,7 +15,10 @@ NOTE the SAM libraries in REoptLite for Mac do not support Apple chips.
 using JuMP, HiGHS, JSON, DelimitedFiles, CSV, DataFrames#, REopt
 
 
-# Only need to account for battery errors at this stage, PV and load errors should be accounted for in previous function
+"""
+Given errors in battery dispatch relative to forecast, update ElectricTariff variables for peak demand charge
+which carry forward to the next MPC run
+"""
 function update_electric_tariff_demand!(results::Dict, inputs::Dict, start_index::Integer, next_start::Integer, batt_forecast_error::Vector{<:Real})
     monthly_peak = inputs["ElectricTariff"]["monthly_previous_peak_demands"]
     tou_peaks = inputs["ElectricTariff"]["tou_previous_peak_demands"]
@@ -73,6 +76,9 @@ function update_electric_tariff_demand!(results::Dict, inputs::Dict, start_index
 
 end
 
+"""
+Sum relevant sections of results dictionary to get a single AC power flow for SAM use
+"""
 function get_ac_batt_power(results::Dict{String, Any})::Vector{Float64}
     pv_to_battery = results["PV"]["to_battery_series_kw"]
     battery_to_load = results["ElectricStorage"]["to_load_series_kw"]
@@ -90,6 +96,10 @@ end
 Apply forecast errors to results dictionary:
  - Increase grid usage if PV is insufficent to cover it
  - Decrease battery discharging if load has decreased to prevent battery to grid
+This function changes values in the results dictionary, these updated values will be used to update the utility rate
+    accounting in later functions.
+Positive pv_forecast_error and load_forecast_error mean that load was forecast to be greater than actual
+indicating increased grid use.
 """
 function adjust_ac_power_for_forecast!(results::Dict{String, Any}, ac_power::Vector{<:Real}, pv_forecast_error::Vector{<:Real}, load_forecast_error::Vector{<:Real})
     pv_to_battery = results["PV"]["to_battery_series_kw"]
@@ -105,9 +115,21 @@ function adjust_ac_power_for_forecast!(results::Dict{String, Any}, ac_power::Vec
     i = 1
     while i <= n
         batt_power = ac_power[i]
-        pv_error = pv_forecast_error[i]
+        pv_error = pv_forecast_error[i] # Assign the error to reduced battery charging or increased grid use
         load_error = load_forecast_error[i]
         if net_error[i] > 0 # increase in net load relative to forecast (w/o accounting for battery)
+            
+            # Discharging - nothing to do, PV and load functions below will take care of it                
+            # Charging - reduce battery power if PV is less than forecast
+            if batt_power < 0
+                if pv_to_battery[i] > 0 && pv_forecast_error[i] > 0
+                    charging_diff = max(0, pv_to_battery[i] - pv_error)
+                    pv_to_battery[i] -= charging_diff
+                    pv_error = max(0, pv_error - charging_diff) # Error reduces battery charging first
+                    batt_power = max(0, ac_power[i] + charging_diff)
+                end
+            end
+
             
             if pv_error > 0 && load_from_pv[i] > 0
                 extra_grid = min(pv_error, load_from_pv[i])
@@ -207,7 +229,7 @@ function main(last_time_step = 8760)
     forecast_output_powers = zeros(0)
     actual_output_powers = zeros(0)
 
-    run_forecast = false
+    run_forecast = true
 
     while start_index < last_time_step + 1
         end_index = min(last_time_step, start_index + horizon - 1)
@@ -217,7 +239,6 @@ function main(last_time_step = 8760)
         end
         # Forecast
     
-        soc_init = scenario_dict["ElectricStorage"]["soc_init_fraction"]
         scenario_dict["ElectricStorage"]["soc_min_fraction"] = 0.7
         scenario_dict["ElectricTariff"]["export_rates"] = repeat([0.075], end_index - start_index + 1)
 
@@ -257,6 +278,7 @@ function main(last_time_step = 8760)
         results = REopt.run_mpc(model, scenario_dict)
         ac_batt_power = get_ac_batt_power(results)
 
+        # In both variables below, positive means increased grid use
         pv_forecast_error = forecast_pv - actual_pv
         load_forecast_error = forecast_load - actual_load
         
@@ -264,7 +286,7 @@ function main(last_time_step = 8760)
 
         reopt_batt_dc_power = REopt.get_batt_power_time_series(results, inv_eff, rec_eff)
 
-        # TODO(bmirletz) should 1:interval be 1:horizon on the next line? actual_power and ac_actual_power have length of 1
+        # Run the battery for number of steps in the interval to get the updated actual SOC
         actual_power = REopt.run_sam_battery(batt, reopt_batt_dc_power[1:interval])
         #print(actual_power)
         ac_actual_power = REopt.dc_to_ac_power(actual_power, inv_eff, rec_eff)
