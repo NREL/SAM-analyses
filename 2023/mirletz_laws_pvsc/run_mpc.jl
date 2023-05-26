@@ -229,7 +229,7 @@ function main(last_time_step = 8760)
     forecast_output_powers = zeros(0)
     actual_output_powers = zeros(0)
 
-    run_forecast = true
+    run_forecast =false
 
     while start_index < last_time_step + 1
         end_index = min(last_time_step, start_index + horizon - 1)
@@ -260,6 +260,9 @@ function main(last_time_step = 8760)
 
             actual_pv = [pv < 0.0 ? 0.0 : pv for pv in actual_pv_df[start_index:end_index, :Power]]
             actual_load = actual_load_df[start_index:end_index, :Load]
+
+            forecast_pv[1] = actual_pv[1]
+            forecast_load[1] = actual_load[1]
 
             scenario_dict["PV"]["production_factor_series"] = forecast_pv / scenario_dict["PV"]["size_kw"]
             scenario_dict["ElectricLoad"]["loads_kw"] = forecast_load
