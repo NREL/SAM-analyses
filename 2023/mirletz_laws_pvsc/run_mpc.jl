@@ -5,14 +5,25 @@ To get the source code:
 git clone https://github.com/NREL/REopt.git
 git checkout run_sam_battery_stateful
 ```
-Then add the REoptLite code to your Julia env
+For Mac: then add the REopt code to your Julia env
 ```julia
-pkg> add your/path/to/REoptLite/  # that you just cloned
+pkg> add your/path/to/REopt.jl/  # that you just cloned
+```
+
+For Windows:
+```julia
+include(your/path/to/REopt.jl/src/REopt.jl)
+```
+
+To run:
+```julia
+include(your/path/to/run_mpc.jl)
+main()
 ```
 
 NOTE the SAM libraries in REoptLite for Mac do not support Apple chips.
 =#
-using JuMP, HiGHS, JSON, DelimitedFiles, CSV, DataFrames#, REopt
+using JuMP, HiGHS, JSON, DelimitedFiles, CSV, DataFrames, REopt
 
 
 """
@@ -310,7 +321,7 @@ function main(last_time_step = 8760)
             append!(actual_output_powers, actual_power)
         end
         
-        """
+        """ - uncomment for debugging
         print("Start time ", start_index, "\n")
         print("MPC results:\n", results)
         print("\n\n")
