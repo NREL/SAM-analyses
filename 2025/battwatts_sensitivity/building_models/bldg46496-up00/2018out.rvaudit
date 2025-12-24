@@ -1,0 +1,13 @@
+ ReadVarsESO
+ processing:building_models\bldg46496-up00\bld46496.rvi
+ input file:building_models\bldg46496-up00\2018out.eso
+ output file:building_models\bldg46496-up00\2018out.csv
+ getting all vars from:building_models\bldg46496-up00\2018out.eso
+  number variables requested for output=           9
+ ReadVars Run Time=00hr 00min  0.22sec
+ ReadVarsESO program completed successfully.
+ ReadVarsESO
+ processing:building_models\bldg46496-up00\bld46496.mvi
+ Requested ESO file=building_models\bldg46496-up00\2018out.mtr
+ does not exist.  ReadVarsESO program terminated.
+ ReadVarsESO program terminated.
